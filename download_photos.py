@@ -40,6 +40,9 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.option('--download-videos',
               help='Download both videos and photos (default: only download photos)',
               is_flag=True)
+@click.option('--download-live-photos',
+              help='Download videos of live photos as well (default: only download photos)',
+              is_flag=True)
 @click.option('--force-size',
               help='Only download the requested size ' + \
                    '(default: download original if size is not available)',
@@ -78,7 +81,7 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 def download(directory, username, password, size, recent, \
-    until_found, download_videos, force_size, auto_delete, \
+    until_found, download_videos, download_live_photos, force_size, auto_delete, \
     only_print_filenames, \
     smtp_username, smtp_password, smtp_host, smtp_port, smtp_no_tls, \
     notification_email):
@@ -144,7 +147,26 @@ def download(directory, username, password, size, recent, \
                 if not os.path.exists(download_dir):
                     os.makedirs(download_dir)
 
+                # Download original photo
                 download_path = local_download_path(photo, size, download_dir)
+                if os.path.isfile(download_path):
+                    if until_found is not None:
+                        consecutive_files_found += 1
+                    if not only_print_filenames:
+                        progress_bar.set_description("%s already exists." % truncate_middle(download_path, 96))
+                    #break
+
+                if only_print_filenames:
+                    print(download_path)
+                else:
+                    download_photo(photo, download_path, size, force_size, download_dir, progress_bar)
+
+                # Download live photo
+                if not "live" in photo.versions.keys():
+                  consecutive_files_found = 0
+                  break
+
+                download_path = local_download_path(photo, "live", download_dir)
                 if os.path.isfile(download_path):
                     if until_found is not None:
                         consecutive_files_found += 1
@@ -155,7 +177,7 @@ def download(directory, username, password, size, recent, \
                 if only_print_filenames:
                     print(download_path)
                 else:
-                    download_photo(photo, download_path, size, force_size, download_dir, progress_bar)
+                    download_photo(photo, download_path, "live", True, download_dir, progress_bar)
 
                 if until_found is not None:
                     consecutive_files_found = 0
@@ -166,9 +188,9 @@ def download(directory, username, password, size, recent, \
                     tqdm.write('Connection failed, retrying after %d seconds...' % WAIT_SECONDS)
                 time.sleep(WAIT_SECONDS)
 
-        else:
-            if not only_print_filenames:
-                tqdm.write("Could not process %s! Maybe try again later." % photo.filename)
+        # else:
+        #     if not only_print_filenames:
+        #         tqdm.write("Could not process %s! Maybe try again later." % photo.filename)
 
         if until_found is not None and consecutive_files_found >= until_found:
             if not only_print_filenames:
@@ -205,8 +227,8 @@ def truncate_middle(s, n):
     return '{0}...{1}'.format(s[:n_1], s[-n_2:])
 
 def filename_with_size(photo, size):
-    return photo.filename.encode('utf-8') \
-        .decode('ascii', 'ignore').replace('.', '-%s.' % size)
+    return photo.versions[size]['filename'].encode('utf-8') \
+        .decode('ascii', 'ignore')
 
 def local_download_path(photo, size, download_dir):
     # Strip any non-ascii characters.
